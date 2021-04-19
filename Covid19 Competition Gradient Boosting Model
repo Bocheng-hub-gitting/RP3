@@ -1,0 +1,701 @@
+## Building Gradient Boosting model for Covid 19 outcomes
+
+memory.limit(10000000000000)
+
+setwd("//vhasfcappreap2/Bocheng2/Covid19_challenge/round 2 modeling/Data")
+myLibrary<-.libPaths()
+myLibrary<-c(myLibrary, 'C:/Bocheng_R_packages')
+
+#options(repos="https://CRAN.R-project.org")
+
+### Loading all the libraries
+
+
+# Hide the many messages and possible warnings from loading all these packages.
+library(crayon,lib.loc=myLibrary)
+library(pillar,lib.loc=myLibrary)
+library(withr,lib.loc=myLibrary)
+library(labeling,lib.loc=myLibrary)
+library(farver,lib.loc=myLibrary)
+library(nnls,lib.loc=myLibrary)
+library(gtable,lib.loc=myLibrary)
+library(e1071,lib.loc=myLibrary)
+
+  library(ape,lib.loc=myLibrary)          # Cluster visualizations
+  library(ggplot2,lib.loc=myLibrary)      # Graphics 
+  library(caret,lib.loc=myLibrary)        # createDataPartition creates a stratified random split 
+  library(ck37r,lib.loc=myLibrary)        # impute_missing_values, standardize, SuperLearner helpers
+  library(dplyr,lib.loc=myLibrary)        # Data cleaning
+  library(glmnet,lib.loc=myLibrary)       # Lasso 
+
+  library(magrittr,lib.loc=myLibrary)     # Pipes %>% for data cleaning, installed by dplyr
+  library(mclust,lib.loc=myLibrary)       # Model-based clustering
+  library(PCAmixdata,lib.loc=myLibrary)   # PCA
+  library(pROC,lib.loc=myLibrary)         # Compute and plot AUC 
+  library(pvclust,lib.loc=myLibrary)      # Dendrograms with p-values
+  library(ranger,lib.loc=myLibrary)       # Random forest algorithm
+  library(remotes,lib.loc=myLibrary)      # Allows installing packages from github
+  library(rio,lib.loc=myLibrary)          # Import/export for any filetype.
+  library(rpart,lib.loc=myLibrary)        # Decision tree algorithm
+  library(rpart.plot,lib.loc=myLibrary)   # Decision tree plotting
+  library(SuperLearner,lib.loc=myLibrary) # Ensemble methods
+  library(xgboost,lib.loc=myLibrary)      # Boosting method
+  library(vip,lib.loc=myLibrary)          # Variable importance plots
+  library(randomForest,lib.loc=myLibrary)
+  library(data.table,lib.loc=myLibrary)
+  library(SHAPforxgboost,lib.loc=myLibrary)
+  
+
+
+#-------------------------------------------------------------------------------------------------------------#
+
+### step 1: Loading and cleaning the training and testing dataset
+
+
+### loading the training and testing dataset;
+
+train.dat=read.csv("//vhasfcappreap2/Bocheng2/Covid19_challenge/round 2 modeling/Data/trn_dataset.csv",header=T)
+test.dat=read.csv("//vhasfcappreap2/Bocheng2/Covid19_challenge/round 2 modeling/Data/trt_dataset.csv",header=T)
+## remove unwanted variables;
+
+train.dat_1=(subset(train.dat,select=-c(cohortname, datafeedname, patientcategory, currentlocation,
+                                          currentroombed, modifieddatetime, releasedate, recentpositive,
+                                          recentnegative, veteran, state, gisfipscode, refreshdate,
+                                          actliverinjury2yrs, actrhhd2yrs, akf2yrs, alcdep2yrs,
+                                          bmiatindex, breastfeed2yrs, breastfeedatindex,
+                                          cardiomyopathy2yrs, cci2yrs, cciever, chrhep2yrs,
+                                          chrlungdisease2yrs, chrneuromuscdisease2yrs, chrrhhd2yrs,
+                                          cirrhosis2yrs, ckf2yrs, compsa2yrs, copd2yrs, csaprim2yrs,
+                                          csr2yrs, elixhauser2yrs, elixhauserever, hiv2yrs,
+                                          influenza2yrs, ibd2yrs, liver2yrs, lowrespinf2yrs,
+                                          measles2yrs, ms2yrs, ohs2yrs, osa2yrs, otherhd2yrs, pad2yrs,
+                                          parkinsons2yrs, pneumoniaventassoc2yrs, pulmhd2yrs,
+                                          rhabdomyolysis2yrs, sicklecell2yrs, sleephypovent2yrs,
+                                          smoke2yrs, spleenremoved2yrs, urinarystone2yrs, vte2yrs,
+                                          albumin2yrs, alphablocker2yrs, antipsychotic2yrs, bcg2yrs,
+                                          benzodiazepine2yrs, cisatracurium2yrs, degarelix2yrs,
+                                          dexamethasone2yrs, dobutamine2yrs, eculizumab2yrs, estrogen2yrs,
+                                          famotidine2yrs, glucocorticoid2yrs, h2blocker2yrs,
+                                          inhlepoprostenol2yrs, inhlnitricoxide2yrs, isoproterenol2yrs,
+                                          lopinavir2yrs, losartan2yrs, milrinone2yrs, pai2yrs, ppi2yrs,
+                                          phenylephrine2yrs, ribavirin2yrs, rosiglitazone2yrs,
+                                          sarilumab2yrs, tricyclic2yrs, valsartan2yrs, vecuronium2yrs,
+                                          airisol2yrs, dropisol2yrs, contactisol2yrs, otherunkisol2yrs,
+                                          ecmo2yrs, asymptomatic30d, lossofsmell30,
+                                          norecordofsymptoms30d, asthma2yrs, casedefinition, patientstatus, 
+                                          deathinpatientflag, disposition, los, losicu, losacutecare, everpositive, 
+                                          noninvasiveventilation2yrs,casedatetime, deathdatetime, admitdatetime, dischargedatetime, 
+                                          indexdate, patientsid,sta6a, patienticn, county, zip,indexcasesta6a,indexcasesta3n,dateofbirth,
+                                          firstpositive, firstnegative, actrespfailure2yrs, septicshock2yrs
+                                          )))
+
+### the training dataset has 75417 patients and 99 variables 
+
+test.dat_1=(subset(test.dat,select=-c(cohortname, datafeedname, patientcategory, currentlocation,
+                                        currentroombed, modifieddatetime, releasedate, recentpositive,
+                                        recentnegative, veteran, state, gisfipscode, refreshdate,
+                                        actliverinjury2yrs, actrhhd2yrs, akf2yrs, alcdep2yrs,
+                                        bmiatindex, breastfeed2yrs, breastfeedatindex,
+                                        cardiomyopathy2yrs, cci2yrs, cciever, chrhep2yrs,
+                                        chrlungdisease2yrs, chrneuromuscdisease2yrs, chrrhhd2yrs,
+                                        cirrhosis2yrs, ckf2yrs, compsa2yrs, copd2yrs, csaprim2yrs,
+                                        csr2yrs, elixhauser2yrs, elixhauserever, hiv2yrs,
+                                        influenza2yrs, ibd2yrs, liver2yrs, lowrespinf2yrs,
+                                        measles2yrs, ms2yrs, ohs2yrs, osa2yrs, otherhd2yrs, pad2yrs,
+                                        parkinsons2yrs, pneumoniaventassoc2yrs, pulmhd2yrs,
+                                        rhabdomyolysis2yrs, sicklecell2yrs, sleephypovent2yrs,
+                                        smoke2yrs, spleenremoved2yrs, urinarystone2yrs, vte2yrs,
+                                        albumin2yrs, alphablocker2yrs, antipsychotic2yrs, bcg2yrs,
+                                        benzodiazepine2yrs, cisatracurium2yrs, degarelix2yrs,
+                                        dexamethasone2yrs, dobutamine2yrs, eculizumab2yrs, estrogen2yrs,
+                                        famotidine2yrs, glucocorticoid2yrs, h2blocker2yrs,
+                                        inhlepoprostenol2yrs, inhlnitricoxide2yrs, isoproterenol2yrs,
+                                        lopinavir2yrs, losartan2yrs, milrinone2yrs, pai2yrs, ppi2yrs,
+                                        phenylephrine2yrs, ribavirin2yrs, rosiglitazone2yrs,
+                                        sarilumab2yrs, tricyclic2yrs, valsartan2yrs, vecuronium2yrs,
+                                        airisol2yrs, dropisol2yrs, contactisol2yrs, otherunkisol2yrs,
+                                        ecmo2yrs, asymptomatic30d, lossofsmell30,
+                                        norecordofsymptoms30d, asthma2yrs, casedefinition, patientstatus, 
+                                        deathinpatientflag, disposition, los, losicu, losacutecare, everpositive, 
+                                        noninvasiveventilation2yrs,casedatetime, deathdatetime, admitdatetime, dischargedatetime, 
+                                        indexdate, patientsid,sta6a, patienticn, county, zip,indexcasesta6a,indexcasesta3n,dateofbirth,
+                                        firstpositive, firstnegative, actrespfailure2yrs, septicshock2yrs
+)))
+
+### the testing dataset has 18887 patients and 98 variables, the holdout variable is missing 
+
+#### Now separate the outcome with the predictor and then use the model.matrix to convert the predictor;
+
+  ##.a.outcomes;
+
+train.outcome=subset(train.dat_1,select=c(covid_status, vent_req, death, LOS_hosp, LOS_ICU))
+test.outcome=subset(test.dat_1,select=c(covid_status, vent_req, death, LOS_hosp, LOS_ICU))
+
+  ## b. predictors
+
+predictors=subset(train.dat_1,select=-c(covid_status, vent_req, death, LOS_hosp, LOS_ICU))
+predictors.test=subset(test.dat_1,select=-c(covid_status, vent_req, death, LOS_hosp, LOS_ICU))
+
+predictors.num=subset(predictors,select=c(ageatindexdate))
+predictors.num.test=subset(predictors.test,select=c(ageatindexdate))
+
+predictors.char=model.matrix(~.,subset(predictors,select=-c(ageatindexdate)))[,-1]
+predictors.char.test=model.matrix(~.,subset(predictors.test,select=-c(ageatindexdate)))[,-1]
+
+  ## combine the num and char variables
+
+train.predictors=cbind(predictors.num,predictors.char)
+test.predictors=cbind(predictors.num.test,predictors.char.test,holdout=(rep(0,dim(test.dat_1)[1])))
+
+##### Setting the grid search for gradient boosting;
+
+
+cv_control =
+  trainControl(method = "repeatedcv",
+               # Number of folds
+               number = 10L,
+               # Number of complete sets of folds to compute
+               repeats = 2L,
+               # Calculate class probabilities?
+               classProbs = TRUE,
+               # Indicate that our response variable is binary
+               summaryFunction = twoClassSummary) 
+
+## set up the hyperparameters of the gradient boosting algorithms
+xgb_grid = expand.grid(
+  # Number of trees to fit, aka boosting iterations
+  nrounds = c(100, 200, 300, 400, 500, 600, 700, 800, 900,1000),
+  # Depth of the decision tree (how many levels of splits).
+  max_depth = c(1,2,3,4,5,6,7,8,9,10), 
+  # Learning rate: lower means the ensemble will adapt more slowly.
+  eta = c(0.0001, 0.01, 0.2),
+  # Make this larger and xgboost will tend to make smaller trees
+  gamma = 0,
+  colsample_bytree = 1.0,
+  subsample = 0.8,
+  # Stop splitting a tree if we only have this many obs in a tree node.
+  min_child_weight = 10L)
+
+# check the number of different combinations of settings do we end up with.
+nrow(xgb_grid)
+
+
+#------------------------------------------------------------------------------------------#
+
+set.seed(31415126)
+##step 2: building models
+
+#### death model;
+
+## a. outcome: death;
+
+train.outcome$death=ifelse(train.outcome$death==1,"Yes","No")
+
+## b. merge outcome with predictors
+
+train.death=data.frame(cbind(death=train.outcome$death,train.predictors))
+
+## c. separate the training dataset into training and holdout testing;
+
+train.death.holdout=train.death[which(train.death$holdout==0),]
+test.death.holdout=train.death[which(train.death$holdout==1),]
+
+train.GB.model.death = caret::train(death ~ ., data =train.death.holdout, 
+                              # Use xgboost's tree-based algorithm (i.e. gbm)
+                              method = "xgbTree",
+                              # Use "AUC" as our performance metric, which caret incorrectly calls "ROC"
+                              metric = "ROC",
+                              # Specify our cross-validation settings
+                              trControl = cv_control,
+                              # Test multiple configurations of the xgboost algorithm
+                              tuneGrid = xgb_grid,
+                              # Hide detailed output (setting to TRUE will print that output)
+                              verbose = FALSE)
+
+
+## Investigate Results
+
+#a. how long does it take to train the model;
+train.GB.model.death$times
+
+#b. Extract the hyperparameters with the best performance
+train.GB.model.death$bestTune
+
+
+#c. And the corresponding performance metrics. 
+train.GB.model.death$results[rownames(train.GB.model.death$results)==rownames(train.GB.model.death$bestTune), ]
+
+
+#eta max_depth gamma colsample_bytree min_child_weight subsample nrounds       ROC      Sens      Spec       ROCSD
+# 138 0.01         4     0                1               10       0.8     800 0.9797682 0.9975734 0.6911883 0.002246479
+#      SensSD    SpecSD
+# 138 0.0009799746 0.0157545
+
+# Plot the performance across all hyperparameter combinations. Nice!
+options(scipen = 999)
+ggplot(train.GB.model.death) + theme_minimal() + ggtitle("Xgboost hyperparameter comparison") 
+
+# Show variable importance (text).
+caret::varImp(train.GB.model.death)
+
+# This version uses the complex caret object
+vip::vip(train.GB.model.death) + theme_minimal()
+
+# This version operates on the xgboost model within the caret object
+vip::vip(train.GB.model.death$finalModel) + theme_minimal()
+
+
+##### Validation for holdout sample;
+
+## Final turning and modeling for death outcome;
+
+
+xgb_grid.death = expand.grid(
+  nrounds =800,
+  max_depth =4, 
+  eta = 0.01,
+  gamma = 0,
+  colsample_bytree = 1.0,
+  subsample = 0.8,
+  min_child_weight = 10L)
+
+train.GB.model.death.final = caret::train(death ~ ., data =train.death.holdout, 
+                                    method = "xgbTree",
+                                    metric = "ROC",
+                                    trControl = cv_control,
+                                    tuneGrid = xgb_grid.death,
+                                    verbose = FALSE)
+
+
+# Testing holdout test dataset;
+test_holdout.death=subset(test.death.holdout, select= -death)
+test_y_class_death=as.factor(test.death.holdout$death)
+predicted_prob.death.holdout = predict(train.GB.model.death.final, test_holdout.death,type="prob")
+
+(rocCurve = pROC::roc(response = test_y_class_death,
+                      predictor = predicted_prob.death.holdout[, "Yes"],
+                      levels = rev(levels(test_y_class_death)),
+                      auc = TRUE, ci = TRUE))
+
+## Testing real test dataset;
+test_death=as.factor(test.outcome$death)
+predicted_prob.death.test = predict(train.GB.model.death.final, test.predictors,type="prob")
+(rocCurve = pROC::roc(response = test_death,
+                      predictor = predicted_prob.death.test[, "Yes"],
+                      levels = rev(levels(test_death)),
+                      auc = TRUE, ci = TRUE))
+
+#---------------------------------------------------------------------------------------------#
+### covid_status model
+
+
+## a. outcome: covid status
+covid_status=ifelse(train.outcome$covid_status==1,"Yes","No")
+
+## b. merge outcome with predictors
+
+train.covid_status=data.frame(cbind(covid_status,train.predictors))
+
+## c. separate the training dataset into training and holdout testing;
+
+train.covid.holdout=train.covid_status[which(train.covid_status$holdout==0),]
+test.covid.holdout=train.covid_status[which(train.covid_status$holdout==1),]
+
+
+train.GB.model.covid_status = caret::train(covid_status ~ ., data =train.covid.holdout, 
+                                    # Use xgboost's tree-based algorithm (i.e. gbm)
+                                    method = "xgbTree",
+                                    # Use "AUC" as our performance metric, which caret incorrectly calls "ROC"
+                                    metric = "ROC",
+                                    # Specify our cross-validation settings
+                                    trControl = cv_control,
+                                    # Test multiple configurations of the xgboost algorithm
+                                    tuneGrid = xgb_grid,
+                                    # Hide detailed output (setting to TRUE will print that output)
+                                    verbose = FALSE)
+
+
+## Investigate Results
+
+#a. how long does it take to train the model;
+train.GB.model.covid_status$times
+
+#b. Extract the hyperparameters with the best performance
+train.GB.model.covid_status$bestTune
+
+
+
+#c. And the corresponding performance metrics. 
+train.GB.model.covid_status$results[rownames(train.GB.model.covid_status$results)==rownames(train.GB.model.covid_status$bestTune), ]
+
+# eta max_depth gamma colsample_bytree min_child_weight subsample nrounds       ROC Sens Spec     ROCSD SensSD
+#152 0.01         6     0                1               10       0.8     200 0.7680152    0    1 0.0138985      0
+#SpecSD
+#152      0
+
+
+# Plot the performance across all hyperparameter combinations. Nice!
+options(scipen = 999)
+ggplot(train.GB.model.covid_status) + theme_minimal() + ggtitle("Xgboost hyperparameter comparison") 
+
+# Show variable importance (text).
+caret::varImp(train.GB.model.covid_status)
+
+# This version uses the complex caret object
+vip::vip(train.GB.model.covid_status) + theme_minimal()
+
+# This version operates on the xgboost model within the caret object
+vip::vip(train.GB.model.covid_status$finalModel) + theme_minimal()
+
+
+
+##### Validation for holdout sample;
+
+## Final turning and modeling for death outcome;
+
+
+xgb_grid.covid = expand.grid(
+  nrounds =200,
+  max_depth =6, 
+  eta = 0.01,
+  gamma = 0,
+  colsample_bytree = 1.0,
+  subsample = 0.8,
+  min_child_weight = 10L)
+
+train.GB.model.covid.final = caret::train(covid_status ~ ., data =train.covid.holdout, 
+                                          method = "xgbTree",
+                                          metric = "ROC",
+                                          trControl = cv_control,
+                                          tuneGrid = xgb_grid.covid,
+                                          verbose = FALSE)
+
+
+# Testing holdout test dataset;
+test_holdout.covid=subset(test.covid.holdout, select= -covid_status)
+test_y_class_covid=as.factor(test.covid.holdout$covid_status)
+predicted_prob.holdout.covid = predict(train.GB.model.covid.final, test_holdout.covid,type="prob")
+
+(rocCurve = pROC::roc(response = test_y_class_covid,
+                      predictor = predicted_prob.holdout.covid[, "Yes"],
+                      levels = rev(levels(test_y_class_covid)),
+                      auc = TRUE, ci = TRUE))
+
+
+## Testing real test dataset;
+test_covid=as.factor(test.outcome$covid_status)
+predicted_prob.covid.test = predict(train.GB.model.death.final, test.predictors,type="prob")
+(rocCurve = pROC::roc(response = test_covid,
+                      predictor = predicted_prob.covid.test[, "Yes"],
+                      levels = rev(levels(test_covid)),
+                      auc = TRUE, ci = TRUE))
+
+
+#---------------------------------------------------------------------------------------------#
+### Ventilation status model
+
+## a. outcome: ventilation status
+vent_req=ifelse(train.outcome$vent_req==1,"Yes","No")
+
+## b. merge outcome with predictors
+
+train.vent_req=data.frame(cbind(vent_req,train.predictors))
+
+## c. separate the training dataset into training and holdout testing;
+
+train.vent.holdout=train.vent_req[which(train.vent_req$holdout==0),]
+test.vent.holdout=train.vent_req[which(train.vent_req$holdout==1),]
+
+
+train.GB.model.vent = caret::train(vent_req ~ ., data =train.vent.holdout, 
+                                           # Use xgboost's tree-based algorithm (i.e. gbm)
+                                           method = "xgbTree",
+                                           # Use "AUC" as our performance metric, which caret incorrectly calls "ROC"
+                                           metric = "ROC",
+                                           # Specify our cross-validation settings
+                                           trControl = cv_control,
+                                           # Test multiple configurations of the xgboost algorithm
+                                           tuneGrid = xgb_grid,
+                                           # Hide detailed output (setting to TRUE will print that output)
+                                           verbose = FALSE)
+
+
+## Investigate Results
+
+#a. how long does it take to train the model;
+train.GB.model.vent$times
+
+#b. Extract the hyperparameters with the best performance
+train.GB.model.vent$bestTune
+
+#c. And the corresponding performance metrics. 
+train.GB.model.vent$results[rownames(train.GB.model.vent$results)==rownames(train.GB.model.vent$bestTune), ]
+
+#   eta max_depth gamma colsample_bytree min_child_weight subsample nrounds       ROC      Sens
+#139 0.01         4     0                1               10       0.8     900 0.9915234 0.9965952
+#  Spec      ROCSD       SensSD     SpecSD
+#139 0.9050472 0.00161749 0.0006683389 0.01189802
+
+# Plot the performance across all hyperparameter combinations. Nice!
+options(scipen = 999)
+ggplot(train.GB.model.vent) + theme_minimal() + ggtitle("Xgboost hyperparameter comparison") 
+
+# Show variable importance (text).
+caret::varImp(train.GB.model.vent)
+
+# This version uses the complex caret object
+vip::vip(train.GB.model.vent) + theme_minimal()
+
+# This version operates on the xgboost model within the caret object
+vip::vip(train.GB.model.vent$finalModel) + theme_minimal()
+
+
+##### Validation for holdout sample;
+
+## Final turning and modeling for death outcome;
+
+
+xgb_grid.vent = expand.grid(
+  nrounds =900,
+  max_depth =4, 
+  eta = 0.01,
+  gamma = 0,
+  colsample_bytree = 1.0,
+  subsample = 0.8,
+  min_child_weight = 10L)
+
+train.GB.model.vent.final = caret::train(vent_req ~ ., data =train.vent.holdout, 
+                                          method = "xgbTree",
+                                          metric = "ROC",
+                                          trControl = cv_control,
+                                          tuneGrid = xgb_grid.vent,
+                                          verbose = FALSE)
+
+
+# Testing holdout test dataset;
+test_holdout.vent=subset(train.vent.holdout, select= -vent_req)
+test_y_class_vent=as.factor(train.vent.holdout$vent_req)
+predicted_prob.holdout.vent = predict(train.GB.model.vent.final, test_holdout.vent,type="prob")
+
+(rocCurve = pROC::roc(response = test_y_class_vent,
+                      predictor = predicted_prob.holdout.vent[, "Yes"],
+                      levels = rev(levels(test_y_class_vent)),
+                      auc = TRUE, ci = TRUE))
+
+
+## Testing real test dataset;
+test_vent=as.factor(test.outcome$vent_req)
+predicted_prob.vent.test = predict(train.GB.model.vent.final, test.predictors,type="prob")
+(rocCurve = pROC::roc(response = test_vent,
+                      predictor = predicted_prob.vent.test[, "Yes"],
+                      levels = rev(levels(test_vent)),
+                      auc = TRUE, ci = TRUE))
+
+
+##----------------------------------------------------------------------------------------------##
+
+### predicting hospitalization and ICU length of stay will be a two-step prediction
+### First let me predict the binary outcome of hospitalization and ICU
+### second I will predict the LOS using poission regression
+
+
+#---------------------------------------------------------------------------------------------#
+
+
+## a. outcome: hospitalization outcome
+hosp_binary=ifelse(is.na(train.outcome$LOS_hosp)==F,"Yes","No")
+
+## b. merge outcome with predictors
+
+train.hosp=data.frame(cbind(hosp_binary,train.predictors))
+
+## c. separate the training dataset into training and holdout testing;
+
+train.hosp.holdout=train.hosp[which(train.hosp$holdout==0),]
+test.hosp.holdout=train.hosp[which(train.hosp$holdout==1),]
+
+
+train.GB.model.hosp = caret::train(hosp_binary ~ ., data =train.hosp.holdout, 
+                                   # Use xgboost's tree-based algorithm (i.e. gbm)
+                                   method = "xgbTree",
+                                   # Use "AUC" as our performance metric, which caret incorrectly calls "ROC"
+                                   metric = "ROC",
+                                   # Specify our cross-validation settings
+                                   trControl = cv_control,
+                                   # Test multiple configurations of the xgboost algorithm
+                                   tuneGrid = xgb_grid,
+                                   # Hide detailed output (setting to TRUE will print that output)
+                                   verbose = FALSE)
+
+## Investigate Results
+
+#a. how long does it take to train the model;
+train.GB.model.hosp$times
+
+#b. Extract the hyperparameters with the best performance
+train.GB.model.hosp$bestTune
+
+#c. And the corresponding performance metrics. 
+train.GB.model.hosp$results[rownames(train.GB.model.hosp$results)==rownames(train.GB.model.hosp$bestTune), ]
+
+# eta max_depth gamma colsample_bytree min_child_weight subsample nrounds      ROC      Sens Spec
+#  201 0.2         1     0                1               10       0.8     100 0.994988 0.9896207    1
+#        ROCSD      SensSD SpecSD
+#201 0.0009520452 0.001709217      0
+
+
+# Plot the performance across all hyperparameter combinations. Nice!
+options(scipen = 999)
+ggplot(train.GB.model.hosp) + theme_minimal() + ggtitle("Xgboost hyperparameter comparison") 
+
+# Show variable importance (text).
+caret::varImp(train.GB.model.hosp)
+
+# This version uses the complex caret object
+vip::vip(train.GB.model.hosp) + theme_minimal()
+
+# This version operates on the xgboost model within the caret object
+vip::vip(train.GB.model.hosp$finalModel) + theme_minimal()
+
+##### Validation for holdout sample;
+
+## Final turning and modeling for death outcome;
+
+xgb_grid.hosp = expand.grid(
+  nrounds =100,
+  max_depth =1, 
+  eta = 0.01,
+  gamma = 0,
+  colsample_bytree = 1.0,
+  subsample = 0.8,
+  min_child_weight = 10L)
+
+train.GB.model.hosp.final = caret::train(hosp_binary ~ ., data =train.hosp.holdout, 
+                                         method = "xgbTree",
+                                         metric = "ROC",
+                                         trControl = cv_control,
+                                         tuneGrid = xgb_grid.hosp,
+                                         verbose = FALSE)
+
+
+# Testing holdout test dataset;
+test_holdout.hosp=subset(test.hosp.holdout, select= -hosp_binary)
+test_y_class_hosp=as.factor(test.hosp.holdout$hosp_binary)
+predicted_prob.holdout.hosp = predict(train.GB.model.hosp.final, test_holdout.hosp,type="prob")
+
+(rocCurve = pROC::roc(response = test_y_class_hosp,
+                      predictor = predicted_prob.holdout.hosp[, "Yes"],
+                      levels = rev(levels(test_y_class_hosp)),
+                      auc = TRUE, ci = TRUE))
+
+
+## Testing real test dataset;
+test_hosp=as.factor(ifelse(is.na(test.outcome$LOS_hosp)==F,"Yes","No"))
+predicted_prob.hosp.test = predict(train.GB.model.hosp.final, test.predictors,type="prob")
+
+(rocCurve = pROC::roc(response = test_hosp,
+                      predictor = predicted_prob.hosp.test[, "Yes"],
+                      levels = rev(levels(test_hosp)),
+                      auc = TRUE, ci = TRUE))
+
+
+#---------------------------------------------------------------------------------------------#
+
+
+## a. outcome: ICU outcome
+icu_binary=ifelse(is.na(train.outcome$LOS_ICU)==F,"Yes","No")
+
+## b. merge outcome with predictors
+
+train.icu=data.frame(cbind(icu_binary,train.predictors))
+
+## c. separate the training dataset into training and holdout testing;
+
+train.icu.holdout=train.icu[which(train.icu$holdout==0),]
+test.icu.holdout=train.icu[which(train.icu$holdout==1),]
+
+
+train.GB.model.icu = caret::train(icu_binary ~ ., data =train.icu.holdout, 
+                                   # Use xgboost's tree-based algorithm (i.e. gbm)
+                                   method = "xgbTree",
+                                   # Use "AUC" as our performance metric, which caret incorrectly calls "ROC"
+                                   metric = "ROC",
+                                   # Specify our cross-validation settings
+                                   trControl = cv_control,
+                                   # Test multiple configurations of the xgboost algorithm
+                                   tuneGrid = xgb_grid,
+                                   # Hide detailed output (setting to TRUE will print that output)
+                                   verbose = FALSE)
+
+## Investigate Results
+
+#a. how long does it take to train the model;
+train.GB.model.icu$times
+
+#b. Extract the hyperparameters with the best performance
+train.GB.model.icu$bestTune
+
+#c. And the corresponding performance metrics. 
+train.GB.model.icu$results[rownames(train.GB.model.icu$results)==rownames(train.GB.model.icu$bestTune), ]
+
+##eta max_depth gamma colsample_bytree min_child_weight subsample nrounds       ROC      Sens      Spec       ROCSD
+# 144 0.01         5     0                1               10       0.8     400 0.9811662 0.9966927 0.7966279 0.002995263
+#      SensSD     SpecSD
+#144 0.0009325121 0.02549297
+
+
+# Plot the performance across all hyperparameter combinations. Nice!
+options(scipen = 999)
+ggplot(train.GB.model.icu) + theme_minimal() + ggtitle("Xgboost hyperparameter comparison") 
+
+# Show variable importance (text).
+caret::varImp(train.GB.model.icu)
+
+# This version uses the complex caret object
+vip::vip(train.GB.model.icu) + theme_minimal()
+
+# This version operates on the xgboost model within the caret object
+vip::vip(train.GB.model.icu$finalModel) + theme_minimal()
+
+##### Validation for holdout sample;
+
+## Final turning and modeling for death outcome;
+
+xgb_grid.icu = expand.grid(
+  nrounds =400,
+  max_depth =5, 
+  eta = 0.01,
+  gamma = 0,
+  colsample_bytree = 1.0,
+  subsample = 0.8,
+  min_child_weight = 10L)
+
+train.GB.model.icu.final = caret::train(icu_binary ~ ., data =train.icu.holdout, 
+                                         method = "xgbTree",
+                                         metric = "ROC",
+                                         trControl = cv_control,
+                                         tuneGrid = xgb_grid.hosp,
+                                         verbose = FALSE)
+
+
+# Testing holdout test dataset;
+test_holdout.icu=subset(test.icu.holdout, select= -icu_binary)
+test_y_class_icu=as.factor(test.icu.holdout$icu_binary)
+predicted_prob.holdout.icu = predict(train.GB.model.icu.final, test_holdout.icu,type="prob")
+
+(rocCurve = pROC::roc(response = test_y_class_icu,
+                      predictor = predicted_prob.holdout.icu[, "Yes"],
+                      levels = rev(levels(test_y_class_icu)),
+                      auc = TRUE, ci = TRUE))
+
+
+## Testing real test dataset;
+test_icu=as.factor(ifelse(is.na(test.outcome$LOS_ICU)==F,"Yes","No"))
+predicted_prob.icu.test = predict(train.GB.model.icu.final, test.predictors,type="prob")
+
+(rocCurve = pROC::roc(response = test_icu,
+                      predictor = predicted_prob.icu.test[, "Yes"],
+                      levels = rev(levels(test_icu)),
+                      auc = TRUE, ci = TRUE))
+
+##------------------------------------------------------------------------------------------------##
